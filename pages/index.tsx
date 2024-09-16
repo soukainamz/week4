@@ -19,22 +19,37 @@ export default function Home() {
   const queryId = useId();
   const sourceId = useId();
   const [text, setText] = useState(essay);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState("List the name, description, and personality of every character in the following format:\n\nName: [name]\nDescription: [description]\nPersonality: [personality]\n");
   const [needsNewIndex, setNeedsNewIndex] = useState(true);
   const [buildingIndex, setBuildingIndex] = useState(false);
   const [runningQuery, setRunningQuery] = useState(false);
   const [nodesWithEmbedding, setNodesWithEmbedding] = useState([]);
   const [chunkSize, setChunkSize] = useState(DEFAULT_CHUNK_SIZE.toString());
-  //^ We're making all of these strings to preserve things like the user typing "0."
-  const [chunkOverlap, setChunkOverlap] = useState(
-    DEFAULT_CHUNK_OVERLAP.toString(),
-  );
+  const [chunkOverlap, setChunkOverlap] = useState(DEFAULT_CHUNK_OVERLAP.toString());
   const [topK, setTopK] = useState(DEFAULT_TOP_K.toString());
-  const [temperature, setTemperature] = useState(
-    DEFAULT_TEMPERATURE.toString(),
-  );
+  const [temperature, setTemperature] = useState(DEFAULT_TEMPERATURE.toString());
   const [topP, setTopP] = useState(DEFAULT_TOP_P.toString());
   const [answer, setAnswer] = useState("");
+  const [tableHtml, setTableHtml] = useState(""); // State for table HTML
+
+  const generateTable = (responseString: string) => {
+    const characterSections = responseString.split('\n\n');
+    const characters = characterSections.map((section: string) => {
+      const lines = section.split('\n');
+      const name = lines[0].replace('Name: ', '');
+      const description = lines[1].replace('Description: ', '');
+      const personality = lines[2].replace('Personality: ', '');
+      return { name, description, personality };
+    });
+
+    let table = '<table border="1"><tr><th>Name</th><th>Description</th><th>Personality</th></tr>';
+    characters.forEach((character: { name: any; description: any; personality: any; }) => {
+      table += `<tr><td>${character.name}</td><td>${character.description}</td><td>${character.personality}</td></tr>`;
+    });
+    table += '</table>';
+
+    return table;
+  };
 
   return (
     <>
@@ -81,25 +96,50 @@ export default function Home() {
             />
           </div>
         </div>
+
+        {/* File input for uploading text files */}
         <div className="my-2 flex h-3/4 flex-auto flex-col space-y-2">
-          <Label htmlFor={sourceId}>Source text:</Label>
-          <Textarea
+          <Label htmlFor={sourceId}>Upload source text file:</Label>
+          <Input
             id={sourceId}
-            value={text}
-            className="flex-1"
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
-              setText(e.target.value);
-              setNeedsNewIndex(true);
+            type="file"
+            accept=".txt"
+            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                  const fileContent = event.target?.result as string;
+                  setText(fileContent);
+                  setNeedsNewIndex(true);
+                };
+                if (file.type !== "text/plain") {
+                  console.error(`${file.type} parsing not implemented`);
+                  setText("Error");
+                } else {
+                  reader.readAsText(file);
+                }
+              }
             }}
           />
         </div>
+
+        {/* Display the uploaded text */}
+        {text && (
+          <Textarea
+            value={text}
+            readOnly
+            placeholder="File contents will appear here"
+            className="flex-1"
+          />
+        )}
+
         <Button
           disabled={!needsNewIndex || buildingIndex || runningQuery}
           onClick={async () => {
             setAnswer("Building index...");
             setBuildingIndex(true);
             setNeedsNewIndex(false);
-            // Post the text and settings to the server
             const result = await fetch("/api/splitandembed", {
               method: "POST",
               headers: {
@@ -196,7 +236,6 @@ export default function Home() {
                   onClick={async () => {
                     setAnswer("Running query...");
                     setRunningQuery(true);
-                    // Post the query and nodesWithEmbedding to the server
                     const result = await fetch("/api/retrieveandquery", {
                       method: "POST",
                       headers: {
@@ -218,7 +257,10 @@ export default function Home() {
                     }
 
                     if (payload) {
-                      setAnswer(payload.response);
+                      // Generate and set table HTML
+                      const table = generateTable(payload.response);
+                      setTableHtml(table);
+                      setAnswer(""); // Clear the answer text
                     }
 
                     setRunningQuery(false);
@@ -228,6 +270,7 @@ export default function Home() {
                 </Button>
               </div>
             </div>
+
             <div className="my-2 flex h-1/4 flex-auto flex-col space-y-2">
               <Label htmlFor={answerId}>Answer:</Label>
               <Textarea
@@ -236,6 +279,11 @@ export default function Home() {
                 value={answer}
                 id={answerId}
               />
+            </div>
+
+            {/* Display the generated table */}
+            <div className="my-2">
+              <div dangerouslySetInnerHTML={{ __html: tableHtml }} />
             </div>
           </>
         )}

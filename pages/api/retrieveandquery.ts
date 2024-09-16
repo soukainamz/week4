@@ -73,5 +73,7 @@ export default async function handler(
 
   const result = await queryEngine.query(query);
 
+  
+
   res.status(200).json({ payload: { response: result.response } });
 }
